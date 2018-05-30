@@ -360,7 +360,7 @@ if __name__ == '__main__':
     early_stopping = EarlyStopping(monitor='val_loss', min_delta=0, patience=5, verbose=0, mode='auto')
     callbacks_list = [checkpoint]
     model.fit(X_train, y_train, batch_size=128,
-                        epochs=100, verbose=1, validation_split=0.10, callbacks=callbacks_list)
+                        epochs=200, verbose=1, validation_split=0.10, callbacks=callbacks_list)
     model.load_weights('model_weights.hdf5')
     '''ValueError: In case of mismatch between the provided input data and the 
     model's expectations, or in case a stateful model receives a number of samples that is not a multiple of the batch size.'''
