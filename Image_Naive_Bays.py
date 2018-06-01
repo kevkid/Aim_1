@@ -29,6 +29,8 @@ import sklearn
 from sklearn.metrics import confusion_matrix    
 import matplotlib.pyplot as plt
 from sklearn.preprocessing import StandardScaler
+import random
+from sklearn import metrics
 
 CLASSES = {0: 'bar', 1: 'gel', 2: 'map', 3: 'network', 4: 'plot',
          5: 'text', 6: 'box', 7: 'heatmap',8: 'medical', 9: 'nxmls', 10: 'screenshot',
@@ -300,7 +302,7 @@ if __name__ == '__main__':
                     image = np.stack((image,)*3, -1)
                 images.append(image)
         return np.array(images)
-    NN_Class_Names = {0:'bar',1:'gel',2:'network',3:'plot',4:'histology',5:'line',6:'molecular',7:'sequence'}
+    NN_Class_Names = {0:'bar',1:'gel',2:'network',3:'plot',4:'histology',5:'sequence',6:'line',7:'molecular'}
     train, test = train_test_split(images, test_size=0.2, random_state=seed)
     X_train = get_images_from_df(train)/255
     X_test = get_images_from_df(test)/255
@@ -382,9 +384,9 @@ if __name__ == '__main__':
     
     print('blue = ground truth, red = prediction')
     plt.figure(figsize=(20, 20), dpi=300)
-    for ind, val in enumerate(test_wrong[:20]):
+    for ind, val in enumerate(test_wrong[:118]):
         plt.subplots_adjust(left=0, right=1, bottom=0, top=1)
-        plt.subplot(10, 10, ind + 1)
+        plt.subplot(10, 12, ind + 1)
         im = val[0]
         plt.axis("off")
         plt.text(0, 0, NN_Class_Names[val[2]], fontsize=14, color='blue')
@@ -393,26 +395,69 @@ if __name__ == '__main__':
     
 
     '''NN K-Fold'''
-    from sklearn.model_selection import StratifiedKFold
     #Get training data
-    X_kfold = get_images_from_df(image_list_subset)/255
-    y_kfold = np.array([class_id for class_id in image_list_subset.loc[: ,'class_id']]).reshape((-1, 1))
+    X_kfold = get_images_from_df(images)/255
+    y_kfold = np.array([class_id for class_id in images.loc[: ,'class_id']]).reshape((-1, 1))
     #one-hot encode labels
-    from sklearn.preprocessing import LabelEncoder, OneHotEncoder
+    from sklearn.preprocessing import OneHotEncoder
     onehotencoder_kfold = OneHotEncoder()
     onehotencoder_kfold.fit(y_kfold)
     #set K folds to 5
     kfold = StratifiedKFold(n_splits=5, shuffle=True, random_state=seed)
     cvscores = []
+    count = 1
     for train, test in kfold.split(X_kfold, y_kfold):
+        random.shuffle(train)
         model = get_CNN()
         model.compile(loss='categorical_crossentropy', optimizer='rmsprop', metrics=['accuracy'])
+        weight_str = 'model_weights_kfold_' + str(count) + '.hdf5'
+        checkpoint = ModelCheckpoint(weight_str, monitor='val_acc', verbose=1, save_best_only=True, mode='max')
+        callbacks_list = [checkpoint]
+        
         '''Have to make the y_train onehot encoded otherwise it wont predict properly'''
-        model.fit(X_kfold[train], onehotencoder_kfold.transform(y_kfold).toarray()[train], batch_size=128,
-                        epochs=50, verbose=1, validation_split=0.10)
+        '''When using validation_split = 0.10 it takes last 10% of data, so if 
+        your kfold does not shuffle it well enough it will give low validation 
+        accuracy, and in this case it wont even train class 16 well. Class 16
+        is the last class in the list. By coincidence, we have 314 images per 
+        class in our training set. When we pull the last 10 percent of the images
+        for validation, it is also 314 images, exactly missing one class. This
+        is why we get such a low validation score, it does not see one class and
+        cant really train that well because of it. It improves a little, but is crap.
+        Keras Documentation: validation_split: Float between 0 and 1. Fraction 
+        of the training data to be used as validation data. The model will set 
+        apart this fraction of the training data, will not train on it, and will 
+        evaluate the loss and any model metrics on this data at the end of each 
+        epoch. The validation data is selected from the last samples in the 
+        x and y data provided, before shuffling.
+        Performing random.shuffle(train) solves the problem
+        '''
+        history = model.fit(X_kfold[train], onehotencoder_kfold.transform(y_kfold).toarray()[train], batch_size=128,
+                        epochs=200, verbose=1, validation_split=0.10, callbacks=callbacks_list)
         # evaluate the model
+        model.load_weights(weight_str)
         scores = model.evaluate(X_kfold[test], onehotencoder_kfold.transform(y_kfold).toarray()[test], verbose=0)
         print("%s: %.2f%%" % (model.metrics_names[1], scores[1]*100))
         cvscores.append(scores[1] * 100)
+        count += 1
     print("%.2f%% (+/- %.2f%%)" % (np.mean(cvscores), np.std(cvscores)))
+    metrics_y_test = [ np.argmax(t) for t in onehotencoder_kfold.transform(y_kfold).toarray()[test]]
+    metrics_y_hat  = [ np.argmax(t) for t in model.predict(X_kfold[test]) ]
+    report = metrics.classification_report(metrics_y_test, metrics_y_hat, target_names=list(NN_Class_Names.values()))
+    print(report)
+    print("Confusion Matrix for: CNN")
+    cm = confusion_matrix(metrics_y_test, metrics_y_hat)
+    cm_df = pd.DataFrame(cm, index=class_names, columns=class_names)
+    print(cm_df)
+    
+    test_wrong = [im for im in zip(X_kfold[test], metrics_y_hat,metrics_y_test) if im[1] != im[2]]#Need this for images
+    print('blue = ground truth, red = prediction')
+    plt.figure(figsize=(12, 12), dpi=300)
+    for ind, val in enumerate(test_wrong[:50]):
+        plt.subplots_adjust(left=0, right=1, bottom=0, top=1)
+        plt.subplot(10, 10, ind + 1)
+        im = val[0]
+        plt.axis("off")
+        plt.text(0, 0, NN_Class_Names[val[2]], fontsize=8, color='blue')
+        plt.text(60, 0, NN_Class_Names[val[1]], fontsize=8, color='red')
+        plt.imshow(im, cmap='gray')
 
