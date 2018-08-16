@@ -1,0 +1,7 @@
+__pycache__/
+Test_results_CNN_he_norm.png
+model_weights.hdf5
+embeddings_weights.h5
+embedding_weights.csv
+Classic_Machine_learning_results.txt
+image_list.csv

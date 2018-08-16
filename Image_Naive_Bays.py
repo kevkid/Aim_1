@@ -7,10 +7,10 @@ Created on Mon Apr 23 16:21:40 2018
 Image - Naive Bays
 """
 import os
-#if os.getcwd() != '/home/kevin/Documents/Lab/Aim_1':
-#    os.chdir('/home/kevin/Documents/Lab/Aim_1')
-if os.getcwd() != '/home/kevin/Downloads/Aim_1':
-    os.chdir('/home/kevin/Downloads/Aim_1')
+if os.getcwd() != '/home/kevin/Documents/Lab/Aim_1':
+    os.chdir('/home/kevin/Documents/Lab/Aim_1')
+#if os.getcwd() != '/home/kevin/Downloads/Aim_1':
+#    os.chdir('/home/kevin/Downloads/Aim_1')
 from sklearn.naive_bayes import GaussianNB
 import get_images_from_db
 import image_augmentation
@@ -31,6 +31,7 @@ import matplotlib.pyplot as plt
 from sklearn.preprocessing import StandardScaler
 import random
 from sklearn import metrics
+from keras.preprocessing import sequence
 
 CLASSES = {0: 'bar', 1: 'gel', 2: 'map', 3: 'network', 4: 'plot',
          5: 'text', 6: 'box', 7: 'heatmap',8: 'medical', 9: 'nxmls', 10: 'screenshot',
@@ -222,7 +223,7 @@ if __name__ == '__main__':
     image_classes = [list(CLASSES.keys())[list(CLASSES.values()).index(x)] for 
                      x in class_names]
     #get images
-    images = get_images(csv_fname='image_list.csv', classes=image_classes)
+    images = get_images(csv_fname='image_list.csv', classes=image_classes, uniform=True)
     #get train and Test set
     x_train, y_train, x_test, y_test = get_train_test(images)
     
