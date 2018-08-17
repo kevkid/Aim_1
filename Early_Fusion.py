@@ -5,9 +5,9 @@ Created on Sun Jul 29 23:12:23 2018
 
 @author: kevin
 """
-
-import os
+use_glove = True
 home_server = False
+import os
 if home_server:
     if os.getcwd() != '/home/kevin/Downloads/Aim_1':
         os.chdir('/home/kevin/Downloads/Aim_1')
@@ -29,7 +29,7 @@ from keras.preprocessing.text import Tokenizer
 from keras.preprocessing.sequence import pad_sequences
 from keras.layers.embeddings import Embedding
 from keras.engine.input_layer import Input
-
+from itertools import islice
 
 CLASSES = {0: 'bar', 1: 'gel', 2: 'map', 3: 'network', 4: 'plot',
          5: 'text', 6: 'box', 7: 'heatmap',8: 'medical', 9: 'nxmls', 10: 'screenshot',
@@ -85,6 +85,9 @@ def caption2sequence(captions, tokenizer):
         captions[i] = padded_seq.flatten()
     return captions
 
+def take(n, iterable):#vocabulary size MUST be smaller than vocab generated from text
+    "Return first n items of the iterable as a list"
+    return dict(islice(iterable, n))
 def get_CNN():
     CNN_Model = Sequential()
     #block 1
@@ -119,6 +122,34 @@ def get_CNN():
     CNN_Model.add(Dense(512, activation='relu', name='dense_layer2'))
     CNN_Model.add(Dropout(0.5))
     return CNN_Model
+def load_glove(GLOVE_DIR, word_index):
+    from sklearn.decomposition import PCA
+    #load embeddings
+    EMBEDDING_DIM = 300
+    embeddings_index = {}
+    f = open(os.path.join(GLOVE_DIR, 'glove.6B.300d.txt'))
+    for line in f:
+        values = line.split()
+        word = values[0]
+        
+        coefs = np.asarray(values[1:], dtype='float32')
+        embeddings_index[word] = coefs
+    f.close()
+    
+    print('Found %s word vectors.' % len(embeddings_index))
+    embedding_matrix = np.zeros((len(word_index), EMBEDDING_DIM))
+    for word, index in tokenizer.word_index.items():
+        if index > vocabulary_size - 1:
+            break
+        else:
+            embedding_vector = embeddings_index.get(word)
+            if embedding_vector is not None:
+                embedding_matrix[index] = embedding_vector
+    print(np.shape(embedding_matrix))
+    print('performing PCA')
+    pca = PCA(n_components=106)
+    pca_result = pca.fit_transform(embedding_matrix)
+    return pca_result
 
 if __name__ == '__main__':
     #Section 0: Get data
@@ -153,10 +184,14 @@ if __name__ == '__main__':
     onehotencoder = OneHotEncoder()
     y_train = onehotencoder.fit_transform(y_train).toarray()
     y_test = onehotencoder.transform(y_test).toarray()
-    #our model
-    #load embedding weights
-    embedding_weights = np.genfromtxt('embedding_weights.csv', delimiter=',')
     
+    
+    if use_glove:
+        embedding_weights = load_glove('/home/kevin/Downloads', take(vocabulary_size, tokenizer.word_index.items()))
+    else:
+        #load embedding weights
+        embedding_weights = np.genfromtxt('embedding_weights.csv', delimiter=',')
+    #our model    
     #set up our text input
     input_text = Input(shape=(200,), name='text_input')
     embedding = Embedding(input_length=200, input_dim=vocabulary_size, output_dim=106, 

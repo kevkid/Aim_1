@@ -86,7 +86,7 @@ class w2v:
             loss = self.model.train_on_batch([arr_1, arr_2], arr_3)
             if cnt % 100 == 0:
                 print("Iteration {}, loss={}".format(cnt, loss))
-            if cnt % 10000 == 0:
+            if cnt % 100000 == 0:
                 self.run_sim()
         np.savetxt("embedding_weights.csv", self.model.layers[2].get_weights()[0], delimiter=",")
         self.model.save_weights('embeddings_weights.h5')
