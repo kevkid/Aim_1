@@ -5,3 +5,5 @@ embeddings_weights.h5
 embedding_weights.csv
 Classic_Machine_learning_results.txt
 image_list.csv
+scrapCode.py
+earlyFusionCoco.py
