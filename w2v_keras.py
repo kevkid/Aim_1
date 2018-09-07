@@ -16,13 +16,11 @@ from keras.engine.input_layer import Input
 from keras.initializers import TruncatedNormal
 from keras.callbacks import ReduceLROnPlateau
 from keras.optimizers import Adam
-import nltk
-from nltk.corpus import stopwords
 import itertools
 import keras
 import pandas as pd
 import random
-
+from utils import filter_sentences
 class w2v_keras:
     
     def __init__(self, vocabulary_size = 10000, window_size = 2, 
@@ -40,52 +38,9 @@ class w2v_keras:
         self.embedding_file_location = embedding_file_location
         self.neg_samples = neg_samples
         self.model_fit = False
-    @staticmethod
-    def filter_sentences(documents, flatten = True):
-        print('filtering sentences')
-        if flatten:
-            sents = [nltk.sent_tokenize(s) for s in documents]
-            sents = list(itertools.chain.from_iterable(sents))
-        else:
-            sents = documents
-        sents = [x.strip() for x in sents]
-        print('filtering sents and removing stopwords')
-        filtered_sents = []
-        import re
-        stop_words = set([ "a", "about", "above", "after", "again", "against", 
-                      "all", "am", "an", "and", "any", "are", "as", "at", "be", 
-                      "because", "been", "before", "being", "below", "between", 
-                      "both", "but", "by", "could", "did", "do", "does", "doing",
-                      "down", "during", "each", "few", "for", "from", "further", 
-                      "had", "has", "have", "having", "he", "he'd", "he'll", "he's", 
-                      "her", "here", "here's", "hers", "herself", "him", "himself", 
-                      "his", "how", "how's", "i", "i'd", "i'll", "i'm", "i've", "if", 
-                      "in", "into", "is", "it", "it's", "its", "itself", "let's",
-                      "me", "more", "most", "my", "myself", "nor", "of", "on", 
-                      "once", "only", "or", "other", "ought", "our", "ours", 
-                      "ourselves", "out", "over", "own", "same", "she", "she'd", 
-                      "she'll", "she's", "should", "so", "some", "such", "than", 
-                      "that", "that's", "the", "their", "theirs", "them",
-                      "themselves", "then", "there", "there's", "these", "they", 
-                      "they'd", "they'll", "they're", "they've", "this", "those", 
-                      "through", "to", "too", "under", "until", "up", "very", 
-                      "was", "we", "we'd", "we'll", "we're", "we've", "were", 
-                      "what", "what's", "when", "when's", "where", "where's", 
-                      "which", "while", "who", "who's", "whom", "why", "why's", 
-                      "with", "would", "you", "you'd", "you'll", "you're", 
-                      "you've", "your", "yours", "yourself", "yourselves", "ing" ] + 
-                        stopwords.words('english'))
-        stop_words_re = re.compile(r'\b(?:%s)\b' % '|'.join(stop_words))
-        for sent in sents:
-            s = sent.lower()
-            s = " ".join(re.findall("[a-zA-Z-]+", s))
-            s = re.sub(stop_words_re, '', s)
-            s = re.sub(' +',' ',s)
-            s = re.sub('\'s','',s)
-            #s = " ".join(nltk.PorterStemmer().stem(x) for x in s.split())#may not need to stem...
-#            if len(s.split()) > 2:
-            filtered_sents.append(s)
-        return filtered_sents
+        self.model, self.validation_model = self.__get_model()
+
+
     def __generate_skipgrams(self, documents):
         #generate skipgrams
         print('creating sents ({} rows)'.format(len(documents)))
@@ -146,7 +101,6 @@ class w2v_keras:
     
     def fit(self, documents = None, batch_size = 10000, epochs = 200, get_sim = True):
         if self.model_fit == False and documents is not None:#never fit before...
-            self.model, self.validation_model = self.__get_model()
             word_target, word_context, labels = self.__generate_skipgrams(documents)
             df = pd.DataFrame({'word_target': word_target, 'word_context': word_context, 
                        'labels': labels})
@@ -223,8 +177,16 @@ class w2v_keras:
         else:
             print('Model is not built!')
     def save_embeddings(self, location):
+        import json
         if self.model.built:
-            np.savetxt(location, self.get_embeddings(), delimiter=",")
+            emb = self.get_embeddings()
+            
+            for key, val in emb.items():
+                emb[key] = val.tolist()
+            
+            data = json.dumps(emb)
+            with open(location, 'w') as outfile:
+                json.dump(data, outfile)
         else:
             print('Model is not built!')
     def load_embeddings(self, embeddings = None, location = None):
@@ -233,7 +195,11 @@ class w2v_keras:
                 self.model.layers[2].set_weights(
                         embeddings.reshape(1, np.shape(embeddings)[0], np.shape(embeddings)[1]))
             else:
-                embeddings = np.genfromtxt(location, delimiter=',')
+                import json
+                with open(location) as f:
+                    embs = json.load(f)
+                    emb = json.loads(embs)
+                embeddings = np.array(list(emb.values()))
                 self.model.layers[2].set_weights(embeddings.reshape(1, np.shape(embeddings)[0], np.shape(embeddings)[1]))
         else:
             print('Model is not built!')
