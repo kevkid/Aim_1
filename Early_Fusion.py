@@ -36,54 +36,75 @@ CLASSES = {0: 'bar', 1: 'gel', 2: 'map', 3: 'network', 4: 'plot',
 
 class_names = ['bar', 'gel', 'network', 'plot', 'histology', 'sequence',
                            'line', 'molecular']
+num_class = len(class_names)
 NN_Class_Names = dict(enumerate(class_names))
+#Set parameters
+create_word_vec = False
+seed = 0
+shape = (106,106)#image shape
+max_text_len = 200
+vocabulary_size = 10000
+csv_fname = 'image_list.csv'
+filters = ''
+use_trained_weights = False
+use_glove = False
 
 def Generate_Model(image = True, text = True):
     #set up our text input
     if image and text:
-        input_text = Input(shape=(200,), name='text_input')
-        embedding = Embedding(input_length=200, input_dim=vocabulary_size, output_dim=106, 
+        input_text = Input(shape=(max_text_len,), name='text_input')
+        embedding = Embedding(input_length=max_text_len, input_dim=vocabulary_size, output_dim=shape[0], 
                                name='embedding_layer', trainable=False, weights=[embedding_weights])
         embedded_text = embedding(input_text)
-        text_embedding = Reshape((200,106,1))(embedded_text)
+        text_embedding = Reshape((max_text_len,shape[0],1))(embedded_text)
         #set up our image input
-        image_input = Input((106,106), name='image_input')
-        image_reshaped = Reshape((106,106,1))(image_input)
+        image_input = Input(shape, name='image_input')
+        image_reshaped = Reshape((shape[0],shape[1],1))(image_input)
         '''merge our data for early fusion. Essentially we are just concatenating our data together'''
         merged = concatenate([text_embedding, image_reshaped], axis=1, name='merged')
         x = get_CNN()(merged)
         output = Dense(8, activation='softmax', name='output')(x)
         classificationModel = Model(inputs=[input_text, image_input], outputs=[output])
     if image and not text:
-        image_input = Input((106,106), name='image_input')
-        image_reshaped = Reshape((106,106,1))(image_input)
+        image_input = Input(shape, name='image_input')
+        image_reshaped = Reshape((shape[0],shape[1],1))(image_input)
         x = get_CNN()(image_reshaped)
         output = Dense(8, activation='softmax', name='output')(x)
         classificationModel = Model(inputs=[input_text], outputs=[output])
     if not image and text:
-        input_text = Input(shape=(200,), name='text_input')
-        embedding = Embedding(input_length=200, input_dim=vocabulary_size, output_dim=106, 
+        input_text = Input(shape=(max_text_len,), name='text_input')
+        embedding = Embedding(input_length=max_text_len, input_dim=vocabulary_size, output_dim=106, 
                                name='embedding_layer', trainable=False, weights=[embedding_weights])
         embedded_text = embedding(input_text)
-        text_embedding = Reshape((200,106,1))(embedded_text)
+        text_embedding = Reshape((max_text_len,shape[0],1))(embedded_text)
         x = get_CNN()(text_embedding)
-        output = Dense(8, activation='softmax', name='output')(x)
+        output = Dense(num_class, activation='softmax', name='output')(x)
         classificationModel = Model(inputs=[image_input], outputs=[output])
     return classificationModel
+    '''Returns our predictions'''
+def test(model, data, image = True, text = True):
+    if image and text:
+        X_text_test, X_image_test, y_test = data
+        model.evaluate(x=[X_text_test, X_image_test], y=[y_test])
+        y_hat=model.predict([X_text_test, X_image_test]).argmax(axis=-1)
+    elif image and not text:
+        X_image_test, y_test = data
+        model.evaluate(x=[X_image_test], y=[y_test])
+        y_hat=model.predict([X_image_test]).argmax(axis=-1)
+    elif not image and text:
+        X_image_test, y_test = data
+        model.evaluate(x=[X_image_test], y=[y_test])
+        y_hat=model.predict([X_image_test]).argmax(axis=-1)
+    
+    cm = confusion_matrix([np.argmax(t) for t in y_test], y_hat)
+    cm_df = pd.DataFrame(cm, index=class_names, columns=class_names)
+    print(cm_df)
+    report = metrics.classification_report([np.argmax(t) for t in y_test], y_hat, target_names=list(NN_Class_Names.values()))
+    print(report)
+    return y_hat
 
-#%% Get our data from source
+#%% Section 0: Get data
 if __name__ == '__main__':
-    #Set parameters
-    create_word_vec = False
-    seed = 0
-    shape = (106,106)#image shape
-    max_text_len = 200
-    vocabulary_size = 10000
-    csv_fname = 'image_list.csv'
-    filters = ''
-    use_trained_weights = False
-    use_glove = False
-#%% Section 0: Get data        
     image_classes = [list(CLASSES.keys())[list(CLASSES.values()).index(x)] for 
                      x in class_names]  
     #get images
@@ -101,12 +122,12 @@ if __name__ == '__main__':
 #%% Generate our sequences from text
     #set up tokenizer
     tokenizer = Tokenizer(num_words= vocabulary_size, lower=True, filters=filters)
-    tokenizer.fit_on_texts(w2v.filter_sentences(data['caption']))
+    tokenizer.fit_on_texts(filter_sentences(data['caption']))
     #get our Training and testing set ready
-    X_text_train = caption2sequence(w2v.filter_sentences(train['caption'].copy(), flatten=False), tokenizer)
-    X_text_test = caption2sequence(w2v.filter_sentences(test['caption'].copy(), flatten=False), tokenizer)
-    X_image_train = get_images_from_df_one_channel(train)/255
-    X_image_test = get_images_from_df_one_channel(test)/255
+    X_text_train = caption2sequence(filter_sentences(train['caption'].copy(), flatten=False), tokenizer, max_text_len)
+    X_text_test = caption2sequence(filter_sentences(test['caption'].copy(), flatten=False), tokenizer, max_text_len)
+    X_image_train = get_images_from_df_one_channel(train, shape)/255
+    X_image_test = get_images_from_df_one_channel(test, shape)/255
     y_train = np.array(train['class_id']).reshape((-1, 1))
     y_test = np.array(test['class_id']).reshape((-1, 1))
     onehotencoder = OneHotEncoder()
@@ -125,7 +146,8 @@ if __name__ == '__main__':
             embs = json.load(f)
             emb = json.loads(embs)
         embedding_weights = mapTokensToEmbedding(emb, tokenizer.word_index)
-#%% Build our model
+#%% Train on images + text
+    classificationModel = Generate_Model(image = True, text=True)
     #set optimizer:
     optimizer = Adam(lr=0.001, beta_1=0.9, beta_2=0.999, epsilon=1e-07, decay=0.0005, amsgrad=True) #RMSprop(lr=0.001, rho=0.9, epsilon=1e-07, decay=0.0)
     classificationModel.compile(optimizer=optimizer,
@@ -138,19 +160,18 @@ if __name__ == '__main__':
     callbacks_list = [reduce_lr, checkpoint]
     history = classificationModel.fit([X_text_train, X_image_train],[y_train], 
                              epochs=150, batch_size=64, validation_split=0.1, callbacks=callbacks_list)
-    
-    classificationModel.evaluate(x=[X_text_test, X_image_test], y=[y_test])
-    y_hat=classificationModel.predict([X_text_test, X_image_test]).argmax(axis=-1)
-    cm = confusion_matrix([np.argmax(t) for t in y_test], y_hat)
-    cm_df = pd.DataFrame(cm, index=class_names, columns=class_names)
-    print(cm_df)
-    report = metrics.classification_report([np.argmax(t) for t in y_test], y_hat, target_names=list(NN_Class_Names.values()))
-    print(report)
+    test(classificationModel, zip(X_text_train, X_image_train, y_train))
+#%%Test with Image + Noise
     #Testing with noise:
     num_test_samples = len(test)
-    text_noise = np.random.rand(num_test_samples,200)
-    image_noise = np.array([np.random.rand(106,106) for x in range(num_test_samples)])
-    
+    text_noise = np.random.rand(num_test_samples,max_text_len)
+    image_noise = np.array([np.random.rand(shape[0],shape[1]) for x in range(num_test_samples)])
+    test(classificationModel, zip(text_noise, X_image_train, y_train))
+#%% Test with Noise + Text
+    test(classificationModel, zip(X_text_train, image_noise, y_train))
+#%% Test with Noise + Noise
+    test(classificationModel, zip(text_noise, image_noise, y_train))
+#%% Train with only images
     '''
     train with only images:
     '''

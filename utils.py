@@ -13,6 +13,7 @@ from keras.models import Sequential
 from keras.layers import Dense, Conv2D, MaxPooling2D, Dropout, Flatten
 from keras.preprocessing.sequence import pad_sequences
 from itertools import islice
+import itertools
 import numpy as np
 import pandas as pd
 import nltk
@@ -32,7 +33,7 @@ def get_images(csv_fname = 'image_list.csv',from_db = False, classes = list(rang
     return image_list_subset
 
 #TODO: Make the images load using relative location
-def get_images_from_df(df):
+def get_images_from_df(df, shape):
     images = []
     for i, (index, sample) in enumerate(df.iterrows()):
             #read image
@@ -43,7 +44,7 @@ def get_images_from_df(df):
             images.append(image)
     return np.array(images)
 #TODO: Make the images load using relative location
-def get_images_from_df_one_channel(df):
+def get_images_from_df_one_channel(df, shape):
     images = []
     for i, (index, sample) in enumerate(df.iterrows()):
             #read image
@@ -54,10 +55,10 @@ def get_images_from_df_one_channel(df):
             images.append(image)
     return np.array(images)
 
-def caption2sequence(captions, tokenizer):
+def caption2sequence(captions, tokenizer, max_text_len = 200, padding = 'post'):
     for i, caption in enumerate(captions):
         sequence = tokenizer.texts_to_sequences([caption])    
-        padded_seq = pad_sequences(sequence, maxlen=max_text_len, padding='post')
+        padded_seq = pad_sequences(sequence, maxlen=max_text_len, padding=padding)
         captions[i] = padded_seq.flatten()
     return captions
 
@@ -138,48 +139,48 @@ def mapTokensToEmbedding(embedding, word_index):#function to map embeddings from
                 embedding_matrix[index] = embedding_vector
     return embedding_matrix
 
-    def filter_sentences(documents, flatten = True):
-        print('filtering sentences')
-        if flatten:
-            sents = [nltk.sent_tokenize(s) for s in documents]
-            sents = list(itertools.chain.from_iterable(sents))
-        else:
-            sents = documents
-        sents = [x.strip() for x in sents]
-        print('filtering sents and removing stopwords')
-        filtered_sents = []
-        import re
-        stop_words = set([ "a", "about", "above", "after", "again", "against", 
-                      "all", "am", "an", "and", "any", "are", "as", "at", "be", 
-                      "because", "been", "before", "being", "below", "between", 
-                      "both", "but", "by", "could", "did", "do", "does", "doing",
-                      "down", "during", "each", "few", "for", "from", "further", 
-                      "had", "has", "have", "having", "he", "he'd", "he'll", "he's", 
-                      "her", "here", "here's", "hers", "herself", "him", "himself", 
-                      "his", "how", "how's", "i", "i'd", "i'll", "i'm", "i've", "if", 
-                      "in", "into", "is", "it", "it's", "its", "itself", "let's",
-                      "me", "more", "most", "my", "myself", "nor", "of", "on", 
-                      "once", "only", "or", "other", "ought", "our", "ours", 
-                      "ourselves", "out", "over", "own", "same", "she", "she'd", 
-                      "she'll", "she's", "should", "so", "some", "such", "than", 
-                      "that", "that's", "the", "their", "theirs", "them",
-                      "themselves", "then", "there", "there's", "these", "they", 
-                      "they'd", "they'll", "they're", "they've", "this", "those", 
-                      "through", "to", "too", "under", "until", "up", "very", 
-                      "was", "we", "we'd", "we'll", "we're", "we've", "were", 
-                      "what", "what's", "when", "when's", "where", "where's", 
-                      "which", "while", "who", "who's", "whom", "why", "why's", 
-                      "with", "would", "you", "you'd", "you'll", "you're", 
-                      "you've", "your", "yours", "yourself", "yourselves", "ing" ] + 
-                        stopwords.words('english'))
-        stop_words_re = re.compile(r'\b(?:%s)\b' % '|'.join(stop_words))
-        for sent in sents:
-            s = sent.lower()
-            s = " ".join(re.findall("[a-zA-Z-]+", s))
-            s = re.sub(stop_words_re, '', s)
-            s = re.sub(' +',' ',s)
-            s = re.sub('\'s','',s)
-            #s = " ".join(nltk.PorterStemmer().stem(x) for x in s.split())#may not need to stem...
+def filter_sentences(documents, flatten = True):
+    print('filtering sentences')
+    if flatten:
+        sents = [nltk.sent_tokenize(s) for s in documents]
+        sents = list(itertools.chain.from_iterable(sents))
+    else:
+        sents = documents
+    sents = [x.strip() for x in sents]
+    print('filtering sents and removing stopwords')
+    filtered_sents = []
+    import re
+    stop_words = set([ "a", "about", "above", "after", "again", "against", 
+                  "all", "am", "an", "and", "any", "are", "as", "at", "be", 
+                  "because", "been", "before", "being", "below", "between", 
+                  "both", "but", "by", "could", "did", "do", "does", "doing",
+                  "down", "during", "each", "few", "for", "from", "further", 
+                  "had", "has", "have", "having", "he", "he'd", "he'll", "he's", 
+                  "her", "here", "here's", "hers", "herself", "him", "himself", 
+                  "his", "how", "how's", "i", "i'd", "i'll", "i'm", "i've", "if", 
+                  "in", "into", "is", "it", "it's", "its", "itself", "let's",
+                  "me", "more", "most", "my", "myself", "nor", "of", "on", 
+                  "once", "only", "or", "other", "ought", "our", "ours", 
+                  "ourselves", "out", "over", "own", "same", "she", "she'd", 
+                  "she'll", "she's", "should", "so", "some", "such", "than", 
+                  "that", "that's", "the", "their", "theirs", "them",
+                  "themselves", "then", "there", "there's", "these", "they", 
+                  "they'd", "they'll", "they're", "they've", "this", "those", 
+                  "through", "to", "too", "under", "until", "up", "very", 
+                  "was", "we", "we'd", "we'll", "we're", "we've", "were", 
+                  "what", "what's", "when", "when's", "where", "where's", 
+                  "which", "while", "who", "who's", "whom", "why", "why's", 
+                  "with", "would", "you", "you'd", "you'll", "you're", 
+                  "you've", "your", "yours", "yourself", "yourselves", "ing" ] + 
+                    stopwords.words('english'))
+    stop_words_re = re.compile(r'\b(?:%s)\b' % '|'.join(stop_words))
+    for sent in sents:
+        s = sent.lower()
+        s = " ".join(re.findall("[a-zA-Z-]+", s))
+        s = re.sub(stop_words_re, '', s)
+        s = re.sub(' +',' ',s)
+        s = re.sub('\'s','',s)
+        #s = " ".join(nltk.PorterStemmer().stem(x) for x in s.split())#may not need to stem...
 #            if len(s.split()) > 2:
-            filtered_sents.append(s)
-        return filtered_sents
+        filtered_sents.append(s)
+    return filtered_sents
