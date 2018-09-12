@@ -128,7 +128,7 @@ def load_glove(GLOVE_DIR, word_index):
     pca_result = pca.fit_transform(embedding_matrix)
     return pca_result
 
-def mapTokensToEmbedding(embedding, word_index):#function to map embeddings from my w2v
+def mapTokensToEmbedding(embedding, word_index, vocabulary_size):#function to map embeddings from my w2v
     embedding_matrix = np.zeros((vocabulary_size, len(embedding['-UNK-'])))
     for word, index in word_index.items():
         if index > vocabulary_size - 1:
@@ -138,7 +138,10 @@ def mapTokensToEmbedding(embedding, word_index):#function to map embeddings from
             if embedding_vector is not None:
                 embedding_matrix[index] = embedding_vector
     return embedding_matrix
-
+'''
+    Flattening means to take the samples and extract the sentences regardless 
+    of structure of the samples
+'''
 def filter_sentences(documents, flatten = True):
     print('filtering sentences')
     if flatten:

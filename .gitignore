@@ -7,3 +7,4 @@ Classic_Machine_learning_results.txt
 image_list.csv
 scrapCode.py
 earlyFusionCoco.py
+w2v_embeddings.json

@@ -47,7 +47,7 @@ class w2v_keras:
         #sents = newsgroups_train.data
         
             
-        sents = self.filter_sentences(documents)
+        sents = filter_sentences(documents)
         self.filtered_sents = sents
         print('tokenizing sents ({} sentences)'.format(len(sents)))
         self.tokenizer = Tokenizer(num_words= self.vocabulary_size, lower=True, filters=self.filters)
