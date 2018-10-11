@@ -20,35 +20,46 @@ from sklearn.metrics import confusion_matrix
 from sklearn import metrics
 from sklearn.preprocessing import OneHotEncoder
 from keras.models import Model
-from keras.layers import Dense, Reshape, concatenate
-from keras.callbacks import ModelCheckpoint, ReduceLROnPlateau
+from keras.layers import Dense, Reshape, concatenate, Lambda
+from keras.callbacks import ModelCheckpoint, ReduceLROnPlateau, EarlyStopping
 from keras.preprocessing.text import Tokenizer
 from keras.layers.embeddings import Embedding
 from keras.engine.input_layer import Input
 from keras.optimizers import Adam
 from utils import *
 
-CLASSES = {0: 'bar', 1: 'gel', 2: 'map', 3: 'network', 4: 'plot',
-         5: 'text', 6: 'box', 7: 'heatmap',8: 'medical', 9: 'nxmls', 10: 'screenshot',
-         11: 'topology', 12: 'diagram', 13: 'histology', 14: 'microscopy',
-         15: 'photo', 16: 'sequence', 17: 'tree', 18: 'fluorescence', 19: 'line',
-         20: 'molecular', 21: 'pie', 22: 'table'}
+SRC = 'PMC'
 
-class_names = ['bar', 'gel', 'network', 'plot', 'histology', 'sequence',
-                           'line', 'molecular']
+if SRC=='PMC':
+    CLASSES = {0: 'bar', 1: 'gel', 2: 'map', 3: 'network', 4: 'plot',
+             5: 'text', 6: 'box', 7: 'heatmap',8: 'medical', 9: 'nxmls', 10: 'screenshot',
+             11: 'topology', 12: 'diagram', 13: 'histology', 14: 'microscopy',
+             15: 'photo', 16: 'sequence', 17: 'tree', 18: 'fluorescence', 19: 'line',
+             20: 'molecular', 21: 'pie', 22: 'table'}
+    
+    class_names = ['bar', 'gel', 'network', 'plot', 'histology', 'sequence',
+                               'line', 'molecular']
+else:
+    class_names = ['cat','dog']
 num_class = len(class_names)
 NN_Class_Names = dict(enumerate(class_names))
 #Set parameters
 create_word_vec = False
+w2v_epochs = 10
 seed = 0
-shape = (106,106)#image shape
 max_text_len = 200
 vocabulary_size = 10000
 csv_fname = 'image_list.csv'
+coco_loc = '/home/kevin/Documents/Lab/coco_dataset'
+#coco_loc = '/media/kevin/1142-5B72/coco_dataset'
 filters = ''
-use_trained_weights = False
 use_glove = False
-
+LOAD_IMG_MODEL_WEIGHTS = False
+LOAD_TXT_MODEL_WEIGHTS = False
+CHANNELS = 3#should be either 3 or 1 for the number of channels
+shape = (106,106,CHANNELS)#image shape
+reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.2, patience=5, min_lr=1e-6, verbose=1)
+early_stopping = EarlyStopping(monitor='loss', min_delta=0, patience=10, verbose=0, mode='auto', baseline=None)
 def Generate_Model(image = True, text = True):
     #set up our text input
     if image and text:
@@ -56,98 +67,59 @@ def Generate_Model(image = True, text = True):
         embedding = Embedding(input_length=max_text_len, input_dim=vocabulary_size, output_dim=shape[0], 
                                name='embedding_layer', trainable=False, weights=[embedding_weights])
         embedded_text = embedding(input_text)
-        text_embedding = Reshape((max_text_len,shape[0],1))(embedded_text)
+        text_embedding = Lambda(embedding_3Ch)(embedded_text)
         #set up our image input
         image_input = Input(shape, name='image_input')
-        image_reshaped = Reshape((shape[0],shape[1],1))(image_input)
         '''merge our data for early fusion. Essentially we are just concatenating our data together'''
-        merged = concatenate([text_embedding, image_reshaped], axis=1, name='merged')
+        merged = concatenate([text_embedding, image_input], axis=1, name='merged')
         x = get_CNN()(merged)
-        output = Dense(8, activation='softmax', name='output')(x)
+        output = Dense(num_class, activation='softmax', name='output')(x)
         classificationModel = Model(inputs=[input_text, image_input], outputs=[output])
     if image and not text:
         image_input = Input(shape, name='image_input')
-        image_reshaped = Reshape((shape[0],shape[1],1))(image_input)
-        x = get_CNN()(image_reshaped)
-        output = Dense(8, activation='softmax', name='output')(x)
+        x = get_CNN()(image_input)
+        output = Dense(num_class, activation='softmax', name='output')(x)
         classificationModel = Model(inputs=[image_input], outputs=[output])
     if not image and text:
         input_text = Input(shape=(max_text_len,), name='text_input')
         embedding = Embedding(input_length=max_text_len, input_dim=vocabulary_size, output_dim=106, 
                                name='embedding_layer', trainable=False, weights=[embedding_weights])
         embedded_text = embedding(input_text)
-        text_embedding = Reshape((max_text_len,shape[0],1))(embedded_text)
+        text_embedding = Lambda(embedding_3Ch)(embedded_text)
         x = get_CNN()(text_embedding)
         output = Dense(num_class, activation='softmax', name='output')(x)
         classificationModel = Model(inputs=[input_text], outputs=[output])
     return classificationModel
-    '''Returns our predictions'''
-def test_model(model, data, image = True, text = True, class_names = None):
-    if image and text:
-        X_text_test, X_image_test, y_test = zip(*data)
-        X_image_test = list(X_image_test)
-        X_text_test = list(X_text_test)
-        y_test = list(y_test)
-        print(model.evaluate(x=[X_text_test, X_image_test], y=[y_test]))
-        y_hat=model.predict([X_text_test, X_image_test]).argmax(axis=-1)
-    elif image and not text:
-        X_image_test, y_test = zip(*data)
-        X_image_test = list(X_image_test)
-        y_test = list(y_test)
-        print(model.evaluate(x=[X_image_test], y=[y_test]))
-        y_hat=model.predict([X_image_test]).argmax(axis=-1)
-    elif not image and text:
-        X_text_test, y_test = zip(*data)
-        X_text_test = list(X_text_test)
-        y_test = list(y_test)
-        print(model.evaluate(x=[X_text_test], y=[y_test]))
-        y_hat=model.predict([X_text_test]).argmax(axis=-1)
-    
-    cm = confusion_matrix([np.argmax(t) for t in y_test], y_hat)
-    cm_df = pd.DataFrame(cm, index=class_names, columns=class_names)
-    print(cm_df)
-    report = metrics.classification_report([np.argmax(t) for t in y_test], y_hat, target_names=class_names)
-    print(report)
-    return y_hat
+
 
 
 #%% Section 0: Get data
 if __name__ == '__main__':
     print('Getting Data')
-    image_classes = [list(CLASSES.keys())[list(CLASSES.values()).index(x)] for 
+    if SRC == 'PMC':
+        image_classes = [list(CLASSES.keys())[list(CLASSES.values()).index(x)] for 
                      x in class_names]  
-    #get images
-    data = get_images(csv_fname=csv_fname, classes=image_classes, uniform=True)
-    #split into train test
-    train, test = train_test_split(data, test_size=0.2, random_state=seed)
-
-
+        data = load_PMC(csv_fname, image_classes, uniform=True)
+    else:
+        data = load_COCO(coco_loc, class_names=class_names)
 #%%Section 0.5 create embeddings - Optional
-    print('Section 0.5: create embeddings')
     if create_word_vec:
+        print('Section 0.5: create embeddings')
         from w2v_keras import w2v_keras
         w2v = w2v_keras(vocabulary_size=vocabulary_size, window_size=3, filters='')
-        w2v.fit(data['caption'])
+        w2v.fit(data['caption'], epochs=w2v_epochs)
 #%% Section 1: Generate our sequences from text
-    print('Generate our sequences from text')
-    #set up tokenizer
-    tokenizer = Tokenizer(num_words= vocabulary_size, lower=True, filters=filters)
-    tokenizer.fit_on_texts(filter_sentences(data['caption']))
-    #get our Training and testing set ready
-    X_text_train = caption2sequence(filter_sentences(train['caption'].copy(), flatten=False), tokenizer, max_text_len)
-    X_text_test = caption2sequence(filter_sentences(test['caption'].copy(), flatten=False), tokenizer, max_text_len)
-    X_image_train = get_images_from_df_one_channel(train, shape)/255
-    X_image_test = get_images_from_df_one_channel(test, shape)/255
-    y_train = np.array(train['class_id']).reshape((-1, 1))
-    y_test = np.array(test['class_id']).reshape((-1, 1))
-    onehotencoder = OneHotEncoder()
-    y_train = onehotencoder.fit_transform(y_train).toarray()
-    y_test = onehotencoder.transform(y_test).toarray()
+    print('Get model data')
+    (X_text_train, X_text_test, X_image_train, X_image_test, y_train, y_test, 
+     tokenizer) = get_model_data(data, seed=seed, test_size = 0.2, vocabulary_size = vocabulary_size, 
+              filters = filters, max_text_len=max_text_len, shape=shape)
+#%% Section 1.5: Load word embeddings
     if use_glove:
-        embedding_weights = load_glove('/home/kevin/Downloads', take(vocabulary_size, tokenizer.word_index.items()))
-    elif use_trained_weights:#get weights from w2v model directly if trained.
+        embedding_weights = load_glove('/home/kevin/Downloads', 
+                            take(vocabulary_size, tokenizer.word_index.items()))
+    elif create_word_vec:#get weights from w2v model directly if trained.
         embedding_weights = mapTokensToEmbedding(w2v.get_embeddings(), 
-                                                 tokenizer.word_index)
+                                                 tokenizer.word_index, vocabulary_size)
     else:
         #load embedding weights from file
         location = 'w2v_embeddings.json'
@@ -155,7 +127,8 @@ if __name__ == '__main__':
         with open(location) as f:
             embs = json.load(f)
             emb = json.loads(embs)
-        embedding_weights = mapTokensToEmbedding(emb, tokenizer.word_index, vocabulary_size)
+        embedding_weights = mapTokensToEmbedding(emb, tokenizer.word_index, 
+                                                 vocabulary_size)
 #%% Train on images + text
     print('Train on images + text')
     classificationModel = Generate_Model(image = True, text=True)
@@ -168,15 +141,15 @@ if __name__ == '__main__':
     filepath="early_fusion_weights/weights-improvement_image_text.hdf5"
     checkpoint = ModelCheckpoint(filepath, monitor='val_acc', verbose=1, save_best_only=True, mode='max')
     reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.2, patience=5, min_lr=1e-6, verbose=1)
-    callbacks_list = [reduce_lr, checkpoint]
+    callbacks_list = [reduce_lr, checkpoint, early_stopping]
     history = classificationModel.fit([X_text_train, X_image_train],[y_train], 
                              epochs=150, batch_size=64, validation_split=0.1, callbacks=callbacks_list)
 #%%test on Image + text
     print('Test on Image + text')
-    test_model(classificationModel, zip(X_text_train, X_image_train, y_test), image = True, text = True)
+    test_model(classificationModel, zip(X_text_test, X_image_test, y_test), image = True, text = True)
 #%%Test with Image + Noise
     print('Testing Image + Noise')
-    num_test_samples = len(test)
+    num_test_samples = len(y_test)
     text_noise = np.random.rand(num_test_samples,max_text_len)
     image_noise = np.array([np.random.rand(shape[0],shape[1]) for x in range(num_test_samples)])
     test_model(classificationModel, zip(text_noise, X_image_test, y_test), image = True, text = True)
@@ -194,7 +167,7 @@ if __name__ == '__main__':
               metrics=['accuracy'])
     filepath="early_fusion_weights/weights-improvement_image_only.hdf5"
     checkpoint = ModelCheckpoint(filepath, monitor='val_acc', verbose=1, save_best_only=True, mode='max')
-    callbacks_list = [checkpoint, reduce_lr]
+    callbacks_list = [reduce_lr, checkpoint, early_stopping]
     history = classificationModel.fit([X_image_train],[y_train], 
                              epochs=150, batch_size=64, validation_split=0.1, callbacks=callbacks_list)
 #%%Test with only images
@@ -209,7 +182,7 @@ if __name__ == '__main__':
               metrics=['accuracy'])
     filepath="early_fusion_weights/weights-improvement_text_only.hdf5"
     checkpoint = ModelCheckpoint(filepath, monitor='val_acc', verbose=1, save_best_only=True, mode='max')
-    callbacks_list = [checkpoint, reduce_lr]
+    callbacks_list = [reduce_lr, checkpoint, early_stopping]
     history = classificationModel.fit([X_text_train],[y_train], 
                              epochs=150, batch_size=32, validation_split=0.1, callbacks=callbacks_list)
 #%%Test with only text

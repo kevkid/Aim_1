@@ -11,7 +11,7 @@ import os
 import get_images_from_db
 import cv2
 from keras.models import Sequential
-from keras.layers import Dense, Conv2D, Conv1D, MaxPooling2D, MaxPooling1D, Dropout, Flatten
+from keras.layers import Dense, Reshape, concatenate, Lambda, Average, Maximum, Add, Multiply, Concatenate, BatchNormalization, Activation, Conv2D, Conv1D, MaxPooling2D, MaxPooling1D, Dropout, Flatten
 from keras.preprocessing.sequence import pad_sequences
 from itertools import islice
 import itertools
@@ -22,9 +22,15 @@ from nltk.corpus import stopwords
 from keras.preprocessing.text import Tokenizer
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import OneHotEncoder
-
+from keras import backend as K
 from pycocotools.coco import COCO
 import pylab
+from sklearn.metrics import confusion_matrix, classification_report
+from keras.models import Model
+from keras.callbacks import ModelCheckpoint
+import tensorflow as tf
+from keras.utils.training_utils import multi_gpu_model
+import matplotlib.pyplot as plt
 
 def get_data(csv_fname = 'image_list.csv',from_db = False, classes = list(range(0,23)), uniform = True):
     if from_db:
@@ -44,9 +50,9 @@ def get_images_from_df(df, shape):
     images = []
     for i, (index, sample) in enumerate(df.iterrows()):
             #read image
-            image = cv2.imread(sample["location"])
-            image = cv2.resize(image, shape)
-            if len(image.shape) < 3:#if there is no channel data
+            image = cv2.cvtColor(cv2.imread(sample["location"]), cv2.COLOR_BGR2RGB)#Colors were in BGR instead of RGB
+            image = cv2.resize(image, shape[:2])
+            if len(image.shape) < 3:#if there is no channel data, just give it 3 channels
                 image = np.stack((image,)*3, -1)
             images.append(image)
     return np.array(images)
@@ -55,7 +61,7 @@ def get_images_from_df_one_channel(df, shape):
     images = []
     for i, (index, sample) in enumerate(df.iterrows()):
             #read image
-            image = cv2.imread(sample["location"])
+            image = cv2.cvtColor(cv2.imread(sample["location"]), cv2.COLOR_BGR2RGB)
             image = cv2.resize(image, shape)
             if len(image.shape) == 3:#if there is no channel data
                 image = image[:,:,1]
@@ -72,62 +78,7 @@ def caption2sequence(captions, tokenizer, max_text_len = 200, padding = 'post'):
 def take(n, iterable):#vocabulary size MUST be smaller than vocab generated from text
     "Return first n items of the iterable as a list"
     return dict(islice(iterable, n))
-def get_CNN():
-    CNN_Model = Sequential()
-    #block 1
-    CNN_Model.add(Conv2D(64, kernel_size=(3,3), activation='relu', padding='valid', kernel_initializer='he_normal', name='block1_conv1'))
-    CNN_Model.add(Conv2D(64, kernel_size=(3,3), activation='relu', padding='valid', kernel_initializer='he_normal', name='block1_conv2'))
-    CNN_Model.add(MaxPooling2D(pool_size=(2, 2), strides=(2, 2), name='block1_pool'))
-    CNN_Model.add(Dropout(0.2))
-    
-    #block 2
-    CNN_Model.add(Conv2D(128, kernel_size=(3,3), activation='relu', padding='valid', kernel_initializer='he_normal', name='block2_conv1'))
-    CNN_Model.add(Conv2D(128, kernel_size=(3,3), activation='relu', padding='valid', kernel_initializer='he_normal', name='block2_conv2'))
-    CNN_Model.add(MaxPooling2D((2, 2), strides=(2, 2), name='block2_pool'))
-    CNN_Model.add(Dropout(0.2))
-    
-    #block 3
-    CNN_Model.add(Conv2D(256, kernel_size=(3,3), activation='relu', padding='valid', kernel_initializer='he_normal', name='block3_conv1'))
-    CNN_Model.add(Conv2D(256, kernel_size=(4,4), activation='relu', padding='valid', kernel_initializer='he_normal', name='block3_conv2'))
-    CNN_Model.add(MaxPooling2D((2, 2), strides=(2, 2), name='block3_pool'))
-    CNN_Model.add(Dropout(0.2))
-    
-    #block 4
-    CNN_Model.add(Conv2D(512, kernel_size=(3,3), activation='relu', padding='valid', kernel_initializer='he_normal', name='block4_conv1'))
-    CNN_Model.add(Conv2D(512, kernel_size=(4,4), activation='relu', padding='valid', kernel_initializer='he_normal', name='block4_conv2'))
-    CNN_Model.add(MaxPooling2D((2, 2), strides=(2, 2), name='block4_pool'))
-    CNN_Model.add(Dropout(0.5))
-    
-    #Flatten
-    CNN_Model.add(Flatten())
-    #Dense section
-    CNN_Model.add(Dense(512, activation='relu', name='dense_layer1'))
-    CNN_Model.add(Dropout(0.5))
-    CNN_Model.add(Dense(512, activation='relu', name='dense_layer2'))
-    CNN_Model.add(Dropout(0.5))
-    return CNN_Model
-
-def get_CNN_TEXT():
-    CNN_Model = Sequential()
-    #block 1
-    CNN_Model.add(Conv1D(32, kernel_size=2, activation='relu', padding='valid', kernel_initializer='he_normal', name='block1_conv1'))
-    CNN_Model.add(Conv1D(32, kernel_size=2, activation='relu', padding='valid', kernel_initializer='he_normal', name='block1_conv2'))
-    CNN_Model.add(MaxPooling1D(pool_size=2, name='block1_pool'))
-    CNN_Model.add(Dropout(0.2))
-    #block 2
-    CNN_Model.add(Conv1D(64, kernel_size=3, activation='relu', padding='valid', kernel_initializer='he_normal', name='block2_conv1'))
-    CNN_Model.add(Conv1D(64, kernel_size=3, activation='relu', padding='valid', kernel_initializer='he_normal', name='block2_conv2'))
-    CNN_Model.add(MaxPooling1D(pool_size=3, name='block2_pool'))
-    CNN_Model.add(Dropout(0.2))    
-    #Flatten
-    CNN_Model.add(Flatten())
-    #Dense section
-    CNN_Model.add(Dense(1024, activation='relu', name='dense_layer1'))
-    CNN_Model.add(Dropout(0.5))
-    CNN_Model.add(Dense(512, activation='relu', name='dense_layer2'))
-    CNN_Model.add(Dropout(0.5))
-    return CNN_Model
-
+#TODO: Fix ncomponents
 def load_glove(GLOVE_DIR, word_index, tokenizer, vocabulary_size = 10000, n_components = 106, EMBEDDING_DIM=300):
     from sklearn.decomposition import PCA
     #load embeddings
@@ -218,13 +169,12 @@ def filter_sentences(documents, flatten = True):
 
 def load_PMC(csv_fname, classes, uniform = True):
     return get_data(csv_fname=csv_fname, classes=classes, uniform=uniform)
-
-def load_COCO(location, class_names = ['cat','dog']):
+#TODO use different subsets for train and test
+def load_COCO(location, class_names, dataType='train2017'):
     pylab.rcParams['figure.figsize'] = (8.0, 10.0)
     #####################Get Training data
     dataDir=location#'/media/kevin/1142-5B72/coco_dataset'
     #dataDir='/home/kevin/Documents/Lab/coco_dataset'
-    dataType='val2017'
     annFile='{}/annotations/instances_{}.json'.format(dataDir,dataType)
     coco=COCO(annFile)
     #I = io.imread('%s/images/%s/%s'%(dataDir,dataType,img['file_name']))
@@ -232,47 +182,268 @@ def load_COCO(location, class_names = ['cat','dog']):
     annFile = '{}/annotations/captions_{}.json'.format(dataDir,dataType)
     coco_caps=COCO(annFile)
     #encapsulate this function
-    def build_df_coco(imgids, class_ID):
+    def build_df_coco(imgids, class_ID, cat_id):
         ImgIdsDict = {}
         for imgid in imgids:
             annIds = coco_caps.getAnnIds(imgIds=imgid);
             captions = [ann['caption'] for ann in coco_caps.loadAnns(annIds)]
+            
+            annIdsBbox = coco.getAnnIds(imgIds=imgid, catIds=cat_id)
+            bbox = [ann['bbox'] for ann in coco.loadAnns(annIdsBbox)]
             img = coco.loadImgs(imgid)[0]
             ImgIdsDict[imgid] = {
                     'class_id':class_ID,
                     'caption':' '.join(captions),
-                    'location': '%s/images/%s/%s'%(dataDir,dataType,img['file_name'])
+                    'location': '%s/images/%s/%s'%(dataDir,dataType,img['file_name']),
+                    'bbox': [set_bbox_to_ratio(x, (img['width'], img['height'])) for x in bbox],
+                    'shape': (img['width'], img['height'])
                     }
         df = pd.DataFrame.from_dict(ImgIdsDict, orient='index')
         return df
-    
+    def set_bbox_to_ratio(bbox, shape):
+        x=bbox[0]/shape[0]
+        y=bbox[1]/shape[1]
+        width=bbox[2]/shape[0]
+        height=bbox[3]/shape[1]
+        return [x,y,width,height]
     #get images of dogs:
     catIds = coco.getCatIds(catNms=class_names);#intersection of images with all categories
-    img_ids = [coco.getImgIds(catIds=x) for x in catIds]#gets our image ids
+    img_ids = {x:coco.getImgIds(catIds=x) for x in catIds}#gets our image ids
+    n = {a:[c for c in b if not any(c in h for j, h in img_ids.items() if j != a)] for a, b in img_ids.items()}
     filtered_ids_dfs = []
-    for i, img_id in enumerate(img_ids):
-        tmp = img_ids.copy()
-        tmp.pop(i)
-        tmp = [item for sublist in tmp for item in sublist]
-        filtered = [img for img in img_id if img not in tmp]
-        filtered_ids_dfs.append(build_df_coco(filtered, i))
-    
+    for i, (k,v) in enumerate(n.items()):
+        filtered_ids_dfs.append(build_df_coco(v, i, k))
     data_df = pd.concat(filtered_ids_dfs)
     return data_df
     
-def get_model_data(data, seed = 0, test_size = 0.2, vocabulary_size = 10000, filters = '', max_text_len=200, shape = (106,106)):
-    train, test = train_test_split(data, test_size=test_size, random_state=seed)
-    #set up tokenizer
-    tokenizer = Tokenizer(num_words= vocabulary_size, lower=True, filters=filters)
-    tokenizer.fit_on_texts(filter_sentences(data['caption']))
-    #get our Training and testing set ready
-    X_text_train = caption2sequence(filter_sentences(train['caption'].copy(), flatten=False), tokenizer, max_text_len)
-    X_text_test = caption2sequence(filter_sentences(test['caption'].copy(), flatten=False), tokenizer, max_text_len)
-    X_image_train = get_images_from_df_one_channel(train, shape)/255
-    X_image_test = get_images_from_df_one_channel(test, shape)/255
-    y_train = np.array(train['class_id']).reshape((-1, 1))
-    y_test = np.array(test['class_id']).reshape((-1, 1))
+#We are automatically normalizing image by dividing by 255
+def get_model_data(data, seed = 0, test_size = 0.2, vocabulary_size = 10000, filters = '', max_text_len=200, shape = (106,106), split = False):
     onehotencoder = OneHotEncoder()
-    y_train = onehotencoder.fit_transform(y_train).toarray()
-    y_test = onehotencoder.transform(y_test).toarray()
-    return (X_text_train, X_text_test, X_image_train, X_image_test, y_train, y_test, tokenizer)
+    if split == False:
+        train, test = train_test_split(data, test_size=test_size, random_state=seed)
+        #set up tokenizer
+        tokenizer = Tokenizer(num_words= vocabulary_size, lower=True, filters=filters)
+        tokenizer.fit_on_texts(filter_sentences(data['caption']))
+        #get our Training and testing set ready
+        X_text_train = caption2sequence(filter_sentences(train['caption'].copy(), flatten=False), tokenizer, max_text_len)
+        X_text_test = caption2sequence(filter_sentences(test['caption'].copy(), flatten=False), tokenizer, max_text_len)    
+        X_image_train = get_images_from_df(train, shape)/255
+        X_image_test = get_images_from_df(test, shape)/255
+        y_train = np.array(train['class_id']).reshape((-1, 1))
+        y_test = np.array(test['class_id']).reshape((-1, 1))
+        y_train = onehotencoder.fit_transform(y_train).toarray()
+        y_test = onehotencoder.transform(y_test).toarray()
+        return (X_text_train, X_text_test, X_image_train, X_image_test, y_train, y_test, tokenizer)
+    else:
+        #set up tokenizer
+        tokenizer = Tokenizer(num_words= vocabulary_size, lower=True, filters=filters)
+        tokenizer.fit_on_texts(filter_sentences(data['caption']))
+        #get our Training and testing set ready
+        X_text = caption2sequence(filter_sentences(data['caption'].copy(), flatten=False), tokenizer, max_text_len)
+        X_image = get_images_from_df(data, shape)/255
+        y = np.array(data['class_id']).reshape((-1, 1))
+        y = onehotencoder.fit_transform(y).toarray()
+        return (X_text, X_image, y, tokenizer)
+
+def embedding_3Ch(inputs):
+    return K.stack((inputs,)*3, -1)
+
+    '''Returns our predictions'''
+def test_model(model, data, image = True, text = True, class_names = None):
+    if image and text:
+        X_text_test, X_image_test, y_test = zip(*data)
+        X_image_test = list(X_image_test)
+        X_text_test = list(X_text_test)
+        y_test = list(y_test)
+        print(model.evaluate(x=[X_text_test, X_image_test], y=[y_test]))
+        y_hat=model.predict([X_text_test, X_image_test]).argmax(axis=-1)
+    elif image and not text:
+        X_image_test, y_test = zip(*data)
+        X_image_test = list(X_image_test)
+        y_test = list(y_test)
+        print(model.evaluate(x=[X_image_test], y=[y_test]))
+        y_hat=model.predict([X_image_test]).argmax(axis=-1)
+    elif not image and text:
+        X_text_test, y_test = zip(*data)
+        X_text_test = list(X_text_test)
+        y_test = list(y_test)
+        print(model.evaluate(x=[X_text_test], y=[y_test]))
+        y_hat=model.predict([X_text_test]).argmax(axis=-1)
+    
+    cm = confusion_matrix([np.argmax(t) for t in y_test], y_hat)
+    cm_df = pd.DataFrame(cm, index=class_names, columns=class_names)
+    print(cm_df)
+    report = classification_report([np.argmax(t) for t in y_test], y_hat, target_names=class_names)
+    print(report)
+    return y_hat
+
+#https://github.com/keras-team/keras/issues/8123
+class MultiGPUCheckpoint(ModelCheckpoint):
+    def set_model(self, model):
+        if isinstance(model.layers[-2], Model):
+            self.model = model.layers[-2]
+        else:
+            self.model = model
+
+def get_multi_gpu_model(model, G):
+    # check to see if we are compiling using just a single GPU
+    if G <= 1:
+        print("[INFO] training with 1 GPU...")
+        model = Model(inputs=model.inputs, outputs=model.outputs)
+    # otherwise, we are compiling using multiple GPUs
+    else:
+        print("[INFO] training with {} GPUs...".format(G))
+        # we'll store a copy of the model on *every* GPU and then combine
+        # the results from the gradient updates on the CPU
+        with tf.device("/cpu:0"):
+            # initialize the model
+            model = Model(inputs=model.inputs, outputs=model.outputs)
+        # make the model parallel
+        model = multi_gpu_model(model, gpus=G)
+    return model
+def plot_model_history(history):
+    # Plot training & validation accuracy values
+    plt.plot(history.history['acc'])
+    plt.plot(history.history['val_acc'])
+    plt.title('Model accuracy')
+    plt.ylabel('Accuracy')
+    plt.xlabel('Epoch')
+    plt.legend(['Train', 'Val'], loc='upper left')
+    plt.show()
+
+    # Plot training & validation loss values
+    plt.plot(history.history['loss'])
+    plt.plot(history.history['val_loss'])
+    plt.title('Model loss')
+    plt.ylabel('Loss')
+    plt.xlabel('Epoch')
+    plt.legend(['Train', 'Val'], loc='upper left')
+    plt.show()
+
+def get_img_branch():
+    Image_Branch = Sequential(name='Image_Branch')
+    #block 1
+    Image_Branch.add(Conv2D(64, kernel_size=(3,3), activation='relu', padding='valid', kernel_initializer='he_normal', name='block1_conv1'))
+    Image_Branch.add(BatchNormalization())
+    Image_Branch.add(Activation('relu'))
+    Image_Branch.add(Conv2D(64, kernel_size=(3,3), padding='valid', kernel_initializer='he_normal', name='block1_conv2'))
+    Image_Branch.add(BatchNormalization())
+    Image_Branch.add(Activation('relu'))
+    Image_Branch.add(MaxPooling2D(pool_size=(2, 2), strides=(2, 2), name='block1_pool'))
+    #Image_Branch.add(Dropout(0.2))
+    
+    #block 2
+    Image_Branch.add(Conv2D(128, kernel_size=(3,3), activation='relu', padding='valid', kernel_initializer='he_normal', name='block2_conv1'))
+    Image_Branch.add(BatchNormalization())
+    Image_Branch.add(Activation('relu'))
+    Image_Branch.add(Conv2D(128, kernel_size=(3,3), padding='valid', kernel_initializer='he_normal', name='block2_conv2'))
+    Image_Branch.add(BatchNormalization())
+    Image_Branch.add(Activation('relu'))
+    Image_Branch.add(MaxPooling2D((2, 2), strides=(2, 2), name='block2_pool'))
+    #Image_Branch.add(Dropout(0.2))
+    
+    #block 3
+    Image_Branch.add(Conv2D(256, kernel_size=(3,3), activation='relu', padding='valid', kernel_initializer='he_normal', name='block3_conv1'))
+    Image_Branch.add(BatchNormalization())
+    Image_Branch.add(Activation('relu'))
+    Image_Branch.add(Conv2D(256, kernel_size=(4,4), padding='valid', kernel_initializer='he_normal', name='block3_conv2'))
+    Image_Branch.add(BatchNormalization())
+    Image_Branch.add(Activation('relu'))
+    Image_Branch.add(MaxPooling2D((2, 2), strides=(2, 2), name='block3_pool'))
+    #Image_Branch.add(Dropout(0.2))
+    
+    #block 4
+    Image_Branch.add(Conv2D(512, kernel_size=(3,3), padding='valid', kernel_initializer='he_normal', name='block4_conv1'))
+    Image_Branch.add(BatchNormalization())
+    Image_Branch.add(Activation('relu'))
+    Image_Branch.add(Conv2D(512, kernel_size=(4,4), padding='valid', kernel_initializer='he_normal', name='block4_conv2'))
+    Image_Branch.add(BatchNormalization())
+    Image_Branch.add(Activation('relu'))
+    Image_Branch.add(MaxPooling2D((2, 2), strides=(2, 2), name='block4_pool'))
+    #Image_Branch.add(Dropout(0.2))
+    
+    #Flatten
+    Image_Branch.add(Flatten())
+    return Image_Branch
+
+def get_text_branch():
+    Text_Branch = Sequential(name='Text_Branch')
+    #block 1
+    Text_Branch.add(Conv1D(32, kernel_size=2, padding='valid', kernel_initializer='he_normal', name='block1_conv1'))
+    Text_Branch.add(BatchNormalization())
+    Text_Branch.add(Activation('relu'))
+    Text_Branch.add(Conv1D(32, kernel_size=2, padding='valid', kernel_initializer='he_normal', name='block1_conv2'))
+    Text_Branch.add(BatchNormalization())
+    Text_Branch.add(Activation('relu'))
+    Text_Branch.add(MaxPooling1D(pool_size=2, name='block1_pool'))
+    Text_Branch.add(Dropout(0.1))
+    #block 2
+    Text_Branch.add(Conv1D(64, kernel_size=3, padding='valid', kernel_initializer='he_normal', name='block2_conv1'))
+    Text_Branch.add(BatchNormalization())
+    Text_Branch.add(Activation('relu'))
+    Text_Branch.add(Conv1D(64, kernel_size=3, padding='valid', kernel_initializer='he_normal', name='block2_conv2'))
+    Text_Branch.add(BatchNormalization())
+    Text_Branch.add(Activation('relu'))
+    Text_Branch.add(MaxPooling1D(pool_size=3, name='block2_pool'))
+    Text_Branch.add(Dropout(0.1))    
+    #Flatten
+    Text_Branch.add(Flatten())
+    return Text_Branch            
+            
+'''
+def get_CNN():
+    CNN_Model = Sequential()
+    #block 1
+    CNN_Model.add(Conv2D(64, kernel_size=(3,3), activation='relu', padding='valid', kernel_initializer='he_normal', name='block1_conv1'))
+    CNN_Model.add(Conv2D(64, kernel_size=(3,3), activation='relu', padding='valid', kernel_initializer='he_normal', name='block1_conv2'))
+    CNN_Model.add(MaxPooling2D(pool_size=(2, 2), strides=(2, 2), name='block1_pool'))
+    CNN_Model.add(Dropout(0.2))
+    
+    #block 2
+    CNN_Model.add(Conv2D(128, kernel_size=(3,3), activation='relu', padding='valid', kernel_initializer='he_normal', name='block2_conv1'))
+    CNN_Model.add(Conv2D(128, kernel_size=(3,3), activation='relu', padding='valid', kernel_initializer='he_normal', name='block2_conv2'))
+    CNN_Model.add(MaxPooling2D((2, 2), strides=(2, 2), name='block2_pool'))
+    CNN_Model.add(Dropout(0.2))
+    
+    #block 3
+    CNN_Model.add(Conv2D(256, kernel_size=(3,3), activation='relu', padding='valid', kernel_initializer='he_normal', name='block3_conv1'))
+    CNN_Model.add(Conv2D(256, kernel_size=(4,4), activation='relu', padding='valid', kernel_initializer='he_normal', name='block3_conv2'))
+    CNN_Model.add(MaxPooling2D((2, 2), strides=(2, 2), name='block3_pool'))
+    CNN_Model.add(Dropout(0.2))
+    
+    #block 4
+    CNN_Model.add(Conv2D(512, kernel_size=(3,3), activation='relu', padding='valid', kernel_initializer='he_normal', name='block4_conv1'))
+    CNN_Model.add(Conv2D(512, kernel_size=(4,4), activation='relu', padding='valid', kernel_initializer='he_normal', name='block4_conv2'))
+    CNN_Model.add(MaxPooling2D((2, 2), strides=(2, 2), name='block4_pool'))
+    CNN_Model.add(Dropout(0.5))
+    
+    #Flatten
+    CNN_Model.add(Flatten())
+    #Dense section
+    CNN_Model.add(Dense(512, activation='relu', name='dense_layer1'))
+    CNN_Model.add(Dropout(0.5))
+    CNN_Model.add(Dense(512, activation='relu', name='dense_layer2'))
+    CNN_Model.add(Dropout(0.5))
+    return CNN_Model
+
+def get_CNN_TEXT():
+    CNN_Model = Sequential()
+    #block 1
+    CNN_Model.add(Conv1D(32, kernel_size=2, activation='relu', padding='valid', kernel_initializer='he_normal', name='block1_conv1'))
+    CNN_Model.add(Conv1D(32, kernel_size=2, activation='relu', padding='valid', kernel_initializer='he_normal', name='block1_conv2'))
+    CNN_Model.add(MaxPooling1D(pool_size=2, name='block1_pool'))
+    CNN_Model.add(Dropout(0.2))
+    #block 2
+    CNN_Model.add(Conv1D(64, kernel_size=3, activation='relu', padding='valid', kernel_initializer='he_normal', name='block2_conv1'))
+    CNN_Model.add(Conv1D(64, kernel_size=3, activation='relu', padding='valid', kernel_initializer='he_normal', name='block2_conv2'))
+    CNN_Model.add(MaxPooling1D(pool_size=3, name='block2_pool'))
+    CNN_Model.add(Dropout(0.2))    
+    #Flatten
+    CNN_Model.add(Flatten())
+    #Dense section
+    CNN_Model.add(Dense(1024, activation='relu', name='dense_layer1'))
+    CNN_Model.add(Dropout(0.5))
+    CNN_Model.add(Dense(512, activation='relu', name='dense_layer2'))
+    CNN_Model.add(Dropout(0.5))
+    return CNN_Model
+'''

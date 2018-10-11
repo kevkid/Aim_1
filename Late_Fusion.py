@@ -26,30 +26,36 @@ from keras.optimizers import Adam
 from utils import *
 
 SRC = 'PMC'
-CLASSES = {0: 'bar', 1: 'gel', 2: 'map', 3: 'network', 4: 'plot',
-         5: 'text', 6: 'box', 7: 'heatmap',8: 'medical', 9: 'nxmls', 10: 'screenshot',
-         11: 'topology', 12: 'diagram', 13: 'histology', 14: 'microscopy',
-         15: 'photo', 16: 'sequence', 17: 'tree', 18: 'fluorescence', 19: 'line',
-         20: 'molecular', 21: 'pie', 22: 'table'}
 
-class_names = ['bar', 'gel', 'network', 'plot', 'histology', 'sequence',
-                           'line', 'molecular']
+if SRC=='PMC':
+    CLASSES = {0: 'bar', 1: 'gel', 2: 'map', 3: 'network', 4: 'plot',
+             5: 'text', 6: 'box', 7: 'heatmap',8: 'medical', 9: 'nxmls', 10: 'screenshot',
+             11: 'topology', 12: 'diagram', 13: 'histology', 14: 'microscopy',
+             15: 'photo', 16: 'sequence', 17: 'tree', 18: 'fluorescence', 19: 'line',
+             20: 'molecular', 21: 'pie', 22: 'table'}
+    
+    class_names = ['bar', 'gel', 'network', 'plot', 'histology', 'sequence',
+                               'line', 'molecular']
+else:
+    class_names = ['cat','dog']
 num_class = len(class_names)
 NN_Class_Names = dict(enumerate(class_names))
 #Set parameters
 create_word_vec = False
-w2v_epochs = 1
+w2v_epochs = 10
 seed = 0
-shape = (106,106)#image shape
 max_text_len = 200
 vocabulary_size = 10000
 csv_fname = 'image_list.csv'
-coco_loc = '/media/kevin/1142-5B72/coco_dataset'#'/home/kevin/Documents/Lab/coco_dataset'
+coco_loc = '/home/kevin/Documents/Lab/coco_dataset'
+#coco_loc = '/media/kevin/1142-5B72/coco_dataset'
 filters = ''
-use_trained_weights = False
 use_glove = False
-LOAD_IMG_MODEL_WEIGHTS = True
-LOAD_TXT_MODEL_WEIGHTS = True
+LOAD_IMG_MODEL_WEIGHTS = False
+LOAD_TXT_MODEL_WEIGHTS = False
+CHANNELS = 3#should be either 3 or 1 for the number of channels
+shape = (106,106,CHANNELS)#image shape
+    
 reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.2, patience=5, min_lr=1e-6, verbose=1)
 early_stopping = EarlyStopping(monitor='loss', min_delta=0, patience=10, verbose=0, mode='auto', baseline=None)
 def Generate_Model(image = True, text = True, text_cnn = False):
@@ -58,16 +64,14 @@ def Generate_Model(image = True, text = True, text_cnn = False):
         input_text = Input(shape=(max_text_len,), name='text_input')
         embedding = Embedding(input_length=max_text_len, input_dim=vocabulary_size, output_dim=shape[0], 
                                name='embedding_layer', trainable=False, weights=[embedding_weights])
-        embedded_text = embedding(input_text)
-        text_embedding = Reshape((max_text_len,shape[0],1))(embedded_text)
+        text_embedding = embedding(input_text)
         #set up our image branch
         image_input = Input(shape, name='image_input')
-        image_reshaped = Reshape((shape[0],shape[1],1))(image_input)
-        image_branch = get_CNN()(image_reshaped)
+        image_branch = get_CNN()(image_input)
         image_branch_out = Dense(num_class, activation='softmax', name='image_branch_output')(image_branch)
         image_branch_model = Model(inputs=[image_input], outputs=[image_branch_out])
         #set up text branch
-        text_branch = get_CNN()(text_embedding)
+        text_branch = get_CNN_TEXT()(text_embedding)
         text_branch_out = Dense(num_class, activation='softmax', name='text_branch_output')(text_branch)
         text_branch_model = Model(inputs=[input_text], outputs=[text_branch_out])
         outputs = [model.outputs[0] for model in [text_model, image_model]]
@@ -75,8 +79,7 @@ def Generate_Model(image = True, text = True, text_cnn = False):
         classificationModel = Model(inputs=[text_model.input, image_model.input], outputs=[output])
     if image and not text:
         image_input = Input(shape, name='image_input')
-        image_reshaped = Reshape((shape[0],shape[1],1))(image_input)
-        x = get_CNN()(image_reshaped)
+        x = get_CNN()(image_input)
         output = Dense(num_class, activation='softmax', name='image_output')(x)
         classificationModel = Model(inputs=[image_input], outputs=[output])
     if not image and text:
@@ -84,7 +87,8 @@ def Generate_Model(image = True, text = True, text_cnn = False):
         embedding = Embedding(input_length=max_text_len, input_dim=vocabulary_size, output_dim=106, 
                                name='embedding_layer', trainable=False, weights=[embedding_weights])
         embedded_text = embedding(input_text)
-        text_embedding = Reshape((max_text_len,shape[0],1))(embedded_text)
+        #text_embedding = Reshape((max_text_len,shape[0],1))(embedded_text)
+        text_embedding = Lambda(embedding_3Ch)(embedded_text)
         x = get_CNN()(text_embedding)
         output = Dense(num_class, activation='softmax', name='text_output')(x)
         classificationModel = Model(inputs=[input_text], outputs=[output])
@@ -97,45 +101,6 @@ def Generate_Model(image = True, text = True, text_cnn = False):
         output = Dense(num_class, activation='softmax', name='text_output')(x)
         classificationModel = Model(inputs=[input_text], outputs=[output])
     return classificationModel
-    '''Returns our predictions'''
-def test_model(model, data, image = True, text = True, class_names = None):
-    if image and text:
-        X_text_test, X_image_test, y_test = zip(*data)
-        X_image_test = list(X_image_test)
-        X_text_test = list(X_text_test)
-        y_test = list(y_test)
-        print(model.evaluate(x=[X_text_test, X_image_test], y=[y_test]))
-        y_hat=model.predict([X_text_test, X_image_test]).argmax(axis=-1)
-    elif image and not text:
-        X_image_test, y_test = zip(*data)
-        X_image_test = list(X_image_test)
-        y_test = list(y_test)
-        print(model.evaluate(x=[X_image_test], y=[y_test]))
-        y_hat=model.predict([X_image_test]).argmax(axis=-1)
-    elif not image and text:
-        X_text_test, y_test = zip(*data)
-        X_text_test = list(X_text_test)
-        y_test = list(y_test)
-        print(model.evaluate(x=[X_text_test], y=[y_test]))
-        y_hat=model.predict([X_text_test]).argmax(axis=-1)
-    
-    cm = confusion_matrix([np.argmax(t) for t in y_test], y_hat)
-    cm_df = pd.DataFrame(cm, index=class_names, columns=class_names)
-    print(cm_df)
-    report = metrics.classification_report([np.argmax(t) for t in y_test], y_hat, target_names=class_names)
-    print(report)
-    return y_hat
-#Our lambda functions
-def mode(inputs):
-    s = K.sum(inputs, axis=0)
-    s = K.one_hot(K.argmax(s), num_class)
-    s = K.softmax(s)
-    return s
-
-def averaging(inputs):
-    s = K.sum(inputs, axis=0)
-    s = K.softmax(s)
-    return s
 
 #%% Section 0: Get data
 if __name__ == '__main__':
@@ -145,7 +110,7 @@ if __name__ == '__main__':
                      x in class_names]  
         data = load_PMC(csv_fname, image_classes, uniform=True)
     else:
-        data = load_COCO(coco_loc)
+        data = load_COCO(coco_loc, class_names=class_names)
 #%%Section 0.5 create embeddings - Optional
     if create_word_vec:
         print('Section 0.5: create embeddings')
@@ -161,9 +126,9 @@ if __name__ == '__main__':
     if use_glove:
         embedding_weights = load_glove('/home/kevin/Downloads', 
                             take(vocabulary_size, tokenizer.word_index.items()))
-    elif use_trained_weights:#get weights from w2v model directly if trained.
+    elif create_word_vec:#get weights from w2v model directly if trained.
         embedding_weights = mapTokensToEmbedding(w2v.get_embeddings(), 
-                                                 tokenizer.word_index)
+                                                 tokenizer.word_index, vocabulary_size)
     else:
         #load embedding weights from file
         location = 'w2v_embeddings.json'
@@ -187,7 +152,7 @@ if __name__ == '__main__':
     checkpoint = ModelCheckpoint(filepath, monitor='val_acc', verbose=1, save_best_only=True, mode='max')
     callbacks_list = [reduce_lr, checkpoint, early_stopping]
     history = image_model.fit([X_image_train],[y_train], 
-                             epochs=150, batch_size=64, validation_split=0.1, callbacks=callbacks_list)
+                             epochs=150, batch_size=128, validation_split=0.1, callbacks=callbacks_list)
 #%%Test with only images
     print('Test with only images')
     y_hat = test_model(image_model, zip(X_image_test, y_test), image = True, text = False)
@@ -223,7 +188,7 @@ if __name__ == '__main__':
     checkpoint = ModelCheckpoint(filepath, monitor='val_acc', verbose=1, save_best_only=True, mode='max')
     callbacks_list = [reduce_lr, checkpoint, early_stopping]
     history = text_image_model.fit([X_text_train, X_image_train],[y_train], 
-                             epochs=150, batch_size=64, validation_split=0.1, callbacks=callbacks_list)
+                             epochs=150, batch_size=128, validation_split=0.1, callbacks=callbacks_list)
 #%%test on Image + text
     print('Test on Image + text')
     y_hat = test_model(text_image_model, zip(X_text_test, X_image_test, y_test))
