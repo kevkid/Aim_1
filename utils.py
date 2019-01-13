@@ -319,46 +319,45 @@ def plot_model_history(history):
     plt.xlabel('Epoch')
     plt.legend(['Train', 'Val'], loc='upper left')
     plt.show()
+#Batch norm after activation
+'''
+https://www.reddit.com/r/MachineLearning/comments/67gonq/d_batch_normalization_before_or_after_relu/dgqy1yt
 
+"The whole purpose of the BN layer is to output zero mean and unit variance output. If you put the relu after it, you are not going to have zero mean and variance will be half too, which defies the whole purpose of putting BN at the first place. I think relu before BN makes sense by above reasoning."
+
+https://github.com/ducha-aiki/caffenet-benchmark/blob/master/batchnorm.md
+'''
 def get_img_branch():
     Image_Branch = Sequential(name='Image_Branch')
     #block 1
     Image_Branch.add(Conv2D(64, kernel_size=(3,3), activation='relu', padding='valid', kernel_initializer='he_normal', name='block1_conv1'))
     Image_Branch.add(BatchNormalization())
-    Image_Branch.add(Activation('relu'))
-    Image_Branch.add(Conv2D(64, kernel_size=(3,3), padding='valid', kernel_initializer='he_normal', name='block1_conv2'))
+    Image_Branch.add(Conv2D(64, kernel_size=(3,3), activation='relu', padding='valid', kernel_initializer='he_normal', name='block1_conv2'))
     Image_Branch.add(BatchNormalization())
-    Image_Branch.add(Activation('relu'))
     Image_Branch.add(MaxPooling2D(pool_size=(2, 2), strides=(2, 2), name='block1_pool'))
     #Image_Branch.add(Dropout(0.2))
     
     #block 2
     Image_Branch.add(Conv2D(128, kernel_size=(3,3), activation='relu', padding='valid', kernel_initializer='he_normal', name='block2_conv1'))
     Image_Branch.add(BatchNormalization())
-    Image_Branch.add(Activation('relu'))
-    Image_Branch.add(Conv2D(128, kernel_size=(3,3), padding='valid', kernel_initializer='he_normal', name='block2_conv2'))
+    Image_Branch.add(Conv2D(128, kernel_size=(3,3), activation='relu', padding='valid', kernel_initializer='he_normal', name='block2_conv2'))
     Image_Branch.add(BatchNormalization())
-    Image_Branch.add(Activation('relu'))
     Image_Branch.add(MaxPooling2D((2, 2), strides=(2, 2), name='block2_pool'))
     #Image_Branch.add(Dropout(0.2))
     
     #block 3
     Image_Branch.add(Conv2D(256, kernel_size=(3,3), activation='relu', padding='valid', kernel_initializer='he_normal', name='block3_conv1'))
     Image_Branch.add(BatchNormalization())
-    Image_Branch.add(Activation('relu'))
-    Image_Branch.add(Conv2D(256, kernel_size=(4,4), padding='valid', kernel_initializer='he_normal', name='block3_conv2'))
+    Image_Branch.add(Conv2D(256, kernel_size=(4,4), activation='relu', padding='valid', kernel_initializer='he_normal', name='block3_conv2'))
     Image_Branch.add(BatchNormalization())
-    Image_Branch.add(Activation('relu'))
     Image_Branch.add(MaxPooling2D((2, 2), strides=(2, 2), name='block3_pool'))
     #Image_Branch.add(Dropout(0.2))
     
     #block 4
-    Image_Branch.add(Conv2D(512, kernel_size=(3,3), padding='valid', kernel_initializer='he_normal', name='block4_conv1'))
+    Image_Branch.add(Conv2D(512, kernel_size=(3,3), activation='relu', padding='valid', kernel_initializer='he_normal', name='block4_conv1'))
     Image_Branch.add(BatchNormalization())
-    Image_Branch.add(Activation('relu'))
-    Image_Branch.add(Conv2D(512, kernel_size=(4,4), padding='valid', kernel_initializer='he_normal', name='block4_conv2'))
+    Image_Branch.add(Conv2D(512, kernel_size=(4,4), activation='relu', padding='valid', kernel_initializer='he_normal', name='block4_conv2'))
     Image_Branch.add(BatchNormalization())
-    Image_Branch.add(Activation('relu'))
     Image_Branch.add(MaxPooling2D((2, 2), strides=(2, 2), name='block4_pool'))
     #Image_Branch.add(Dropout(0.2))
     
@@ -369,21 +368,17 @@ def get_img_branch():
 def get_text_branch():
     Text_Branch = Sequential(name='Text_Branch')
     #block 1
-    Text_Branch.add(Conv1D(32, kernel_size=2, padding='valid', kernel_initializer='he_normal', name='block1_conv1'))
+    Text_Branch.add(Conv1D(32, kernel_size=2, activation='relu', padding='valid', kernel_initializer='he_normal', name='block1_conv1'))
     Text_Branch.add(BatchNormalization())
-    Text_Branch.add(Activation('relu'))
-    Text_Branch.add(Conv1D(32, kernel_size=2, padding='valid', kernel_initializer='he_normal', name='block1_conv2'))
+    Text_Branch.add(Conv1D(32, kernel_size=2, activation='relu', padding='valid', kernel_initializer='he_normal', name='block1_conv2'))
     Text_Branch.add(BatchNormalization())
-    Text_Branch.add(Activation('relu'))
     Text_Branch.add(MaxPooling1D(pool_size=2, name='block1_pool'))
     Text_Branch.add(Dropout(0.1))
     #block 2
-    Text_Branch.add(Conv1D(64, kernel_size=3, padding='valid', kernel_initializer='he_normal', name='block2_conv1'))
+    Text_Branch.add(Conv1D(64, kernel_size=3, activation='relu', padding='valid', kernel_initializer='he_normal', name='block2_conv1'))
     Text_Branch.add(BatchNormalization())
-    Text_Branch.add(Activation('relu'))
-    Text_Branch.add(Conv1D(64, kernel_size=3, padding='valid', kernel_initializer='he_normal', name='block2_conv2'))
+    Text_Branch.add(Conv1D(64, kernel_size=3, activation='relu', padding='valid', kernel_initializer='he_normal', name='block2_conv2'))
     Text_Branch.add(BatchNormalization())
-    Text_Branch.add(Activation('relu'))
     Text_Branch.add(MaxPooling1D(pool_size=3, name='block2_pool'))
     Text_Branch.add(Dropout(0.1))    
     #Flatten
