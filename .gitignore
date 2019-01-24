@@ -9,4 +9,9 @@ scrapCode.py
 earlyFusionCoco.py
 test.py
 test_file.py
+#Ignore weights directory
+early_fusion_weights/
+late_fusion_weights/
+model_fusion_weights/
+unimodal_weights/
 

@@ -31,6 +31,7 @@ from keras.callbacks import ModelCheckpoint
 import tensorflow as tf
 from keras.utils.training_utils import multi_gpu_model
 import matplotlib.pyplot as plt
+import collections
 
 def get_data(csv_fname = 'image_list.csv',from_db = False, classes = list(range(0,23)), uniform = True):
     if from_db:
@@ -319,6 +320,69 @@ def plot_model_history(history):
     plt.xlabel('Epoch')
     plt.legend(['Train', 'Val'], loc='upper left')
     plt.show()
+    
+'''Converts classification report into a pandas DataFrame'''
+def classification_report_df(report):
+    report_data = []
+    lines = report.split('\n')
+    del lines[-5]
+    del lines[-1]
+    del lines[1]
+    for line in lines[1:]:
+        row = collections.OrderedDict()
+        row_data = line.split()
+        row_data = list(filter(None, row_data))
+        if len(row_data) > 5:#class has a space such as micro average
+            row['class'] = row_data[0] + "_" + row_data[1]
+            del row_data[1]
+        else:
+            row['class'] = row_data[0]
+        
+        row['precision'] = float(row_data[1])
+        row['recall'] = float(row_data[2])
+        row['f1_score'] = float(row_data[3])
+        row['support'] = int(row_data[4])
+        report_data.append(row)
+    df = pd.DataFrame.from_dict(report_data)
+    df.set_index('class', inplace=True)
+    return df
+'''Calculates the mean for each row in a pandas DataFrame'''
+def df_mean(df_list):
+    df_concat = pd.concat(df_list)
+    by_row_index = df_concat.groupby(df_concat.index)
+    df_means = by_row_index.mean()
+    return df_means
+
+'''
+This allows us to print the first and last x number of images and their sample number
+This is to help visualize our images when we are cross validating so we have the sames 
+images for each cross validation. We want to use the same cross validation sets across models
+'''
+def print_samples(samples,images = None, text = None, tokenizer = None, x = 2):
+    fist_last = np.append(samples[:x],samples[-x:])
+    print(fist_last)
+    if images is not None:
+        imgs = images[fist_last]
+        w=10
+        h=10
+        fig=plt.figure(figsize=(8, 8))
+        columns = 4
+        rows = 5
+        for i in range(len(imgs)):
+            img = imgs[i]
+            fig.add_subplot(rows, columns, i+1)
+            plt.text(0, 0, "id: {}".format(fist_last[i]), fontsize=14, color='blue')
+            plt.imshow(img)
+        plt.show()
+    if text is not None:
+        for i in fist_last:
+            txt_ = list(text[i])
+            txt_ = list(filter(lambda a: a != 0, txt_))
+            print("id: {}".format(i))
+            [print(tokenizer.index_word[j] + " ", end='', flush=True) for j in txt_]
+            print("\n=======")
+            
+
 #Batch norm after activation
 '''
 https://www.reddit.com/r/MachineLearning/comments/67gonq/d_batch_normalization_before_or_after_relu/dgqy1yt
