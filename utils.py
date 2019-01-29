@@ -249,6 +249,9 @@ def get_model_data(data, seed = 0, test_size = 0.2, vocabulary_size = 10000, fil
 def embedding_3Ch(inputs):
     return K.stack((inputs,)*3, -1)
 
+def image_3Ch_to_1Ch(inputs, shape):#Should be sending in a 100x100x3px image to convert it into a 300x100 image
+    return K.reshape(inputs, shape)
+
     '''Returns our predictions'''
 def test_model(model, data, image = True, text = True, class_names = None):
     if image and text:
@@ -447,7 +450,45 @@ def get_text_branch():
     Text_Branch.add(Dropout(0.1))    
     #Flatten
     Text_Branch.add(Flatten())
-    return Text_Branch            
+    return Text_Branch   
+
+def get_img_branch_double():
+    Image_Branch = Sequential(name='Image_Branch')
+    #block 1
+    Image_Branch.add(Conv2D(128, kernel_size=(3,3), activation='relu', padding='valid', kernel_initializer='he_normal', name='block1_conv1'))
+    Image_Branch.add(BatchNormalization())
+    Image_Branch.add(Conv2D(128, kernel_size=(3,3), activation='relu', padding='valid', kernel_initializer='he_normal', name='block1_conv2'))
+    Image_Branch.add(BatchNormalization())
+    Image_Branch.add(MaxPooling2D(pool_size=(2, 2), strides=(2, 2), name='block1_pool'))
+    #Image_Branch.add(Dropout(0.2))
+    
+    #block 2
+    Image_Branch.add(Conv2D(256, kernel_size=(3,3), activation='relu', padding='valid', kernel_initializer='he_normal', name='block2_conv1'))
+    Image_Branch.add(BatchNormalization())
+    Image_Branch.add(Conv2D(256, kernel_size=(3,3), activation='relu', padding='valid', kernel_initializer='he_normal', name='block2_conv2'))
+    Image_Branch.add(BatchNormalization())
+    Image_Branch.add(MaxPooling2D((2, 2), strides=(2, 2), name='block2_pool'))
+    #Image_Branch.add(Dropout(0.2))
+    
+    #block 3
+    Image_Branch.add(Conv2D(512, kernel_size=(3,3), activation='relu', padding='valid', kernel_initializer='he_normal', name='block3_conv1'))
+    Image_Branch.add(BatchNormalization())
+    Image_Branch.add(Conv2D(512, kernel_size=(4,4), activation='relu', padding='valid', kernel_initializer='he_normal', name='block3_conv2'))
+    Image_Branch.add(BatchNormalization())
+    Image_Branch.add(MaxPooling2D((2, 2), strides=(2, 2), name='block3_pool'))
+    #Image_Branch.add(Dropout(0.2))
+    
+    #block 4
+    Image_Branch.add(Conv2D(1024, kernel_size=(3,3), activation='relu', padding='valid', kernel_initializer='he_normal', name='block4_conv1'))
+    Image_Branch.add(BatchNormalization())
+    Image_Branch.add(Conv2D(1024, kernel_size=(4,4), activation='relu', padding='valid', kernel_initializer='he_normal', name='block4_conv2'))
+    Image_Branch.add(BatchNormalization())
+    Image_Branch.add(MaxPooling2D((2, 2), strides=(2, 2), name='block4_pool'))
+    #Image_Branch.add(Dropout(0.2))
+    
+    #Flatten
+    Image_Branch.add(Flatten())
+    return Image_Branch
             
 '''
 def get_CNN():
